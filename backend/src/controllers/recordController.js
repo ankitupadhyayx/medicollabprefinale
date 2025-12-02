@@ -1,12 +1,32 @@
 const Record = require('../models/Record');
 const User = require('../models/User');
+const fs = require('fs');
+const path = require('path');
 
-// Create new record (Hospital only)
+// Create new record with file upload (Hospital only)
 exports.createRecord = async (req, res) => {
   try {
-    const { title, description, patientEmail, recordType, metadata } = req.body;
+    // Extract fields from FormData
+    const title = req.body.title;
+    const description = req.body.description;
+    const patientEmail = req.body.patientEmail;
+    const recordType = req.body.recordType || 'Other';
+    const metadata = req.body.metadata;
 
-    console.log('🚀 Creating record:', { title, patientEmail, recordType });
+    console.log('🚀 Creating record:', { 
+      title, 
+      patientEmail, 
+      recordType,
+      hasFiles: req.files ? req.files.length : 0,
+      body: req.body 
+    });
+
+    // Validate required fields
+    if (!title || !description || !patientEmail) {
+      return res.status(400).json({ 
+        message: 'Title, description, and patient email are required' 
+      });
+    }
 
     // Validate hospital user
     if (req.user.role !== 'HOSPITAL') {
@@ -16,7 +36,31 @@ exports.createRecord = async (req, res) => {
     // Find patient by email
     const patient = await User.findOne({ email: patientEmail, role: 'PATIENT' });
     if (!patient) {
+      // Delete uploaded files if patient not found
+      if (req.files && req.files.length > 0) {
+        for (const file of req.files) {
+          fs.unlink(file.path, (err) => {
+            if (err) console.error('Error deleting file:', err);
+          });
+        }
+      }
       return res.status(404).json({ message: 'Patient not found with this email' });
+    }
+
+    // Process uploaded files
+    const files = [];
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        files.push({
+          filename: file.filename,
+          originalName: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          url: `/uploads/${file.filename}`,
+          uploadedAt: new Date(),
+        });
+      }
+      console.log(`📎 ${files.length} file(s) uploaded`);
     }
 
     // Create record
@@ -26,7 +70,8 @@ exports.createRecord = async (req, res) => {
       patient: patient._id,
       hospital: req.user._id,
       hospitalName: req.user.hospitalName || req.user.name,
-      recordType: recordType || 'Other',
+      recordType,
+      files,
       metadata,
     });
 
@@ -45,6 +90,16 @@ exports.createRecord = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Create record error:', error);
+    
+    // Delete uploaded files if record creation fails
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        fs.unlink(file.path, (err) => {
+          if (err) console.error('Error deleting file:', err);
+        });
+      }
+    }
+    
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
@@ -240,7 +295,7 @@ exports.deleteRecord = async (req, res) => {
   }
 };
 
-// Get record statistics (Patient)
+// Get record statistics
 exports.getRecordStats = async (req, res) => {
   try {
     let query = { isDeleted: false };

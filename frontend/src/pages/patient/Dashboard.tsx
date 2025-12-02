@@ -1,186 +1,628 @@
-
-import React from 'react';
-import { useAuth } from '../../context/AuthContext';
-import { MOCK_RECORDS, MOCK_REMINDERS, MOCK_PENDING_APPOINTMENTS } from '../../constants';
-import { Button } from '../../components/ui/Button';
+import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
-  Calendar, 
-  Clock, 
-  AlertCircle, 
+  Download, 
   CheckCircle, 
-  Brain, 
-  ChevronRight,
-  Activity,
-  Bell
+  XCircle, 
+  Clock, 
+  Hospital,
+  Calendar,
+  AlertCircle,
+  Filter,
+  Search,
+  File,
+  Loader,
+  Eye
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Button } from '../../components/ui/Button';
+
+interface Record {
+  _id: string;
+  title: string;
+  description: string;
+  recordType: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  hospital: {
+    _id: string;
+    name: string;
+    email: string;
+    hospitalName?: string;
+  };
+  files: Array<{
+    filename: string;
+    originalName: string;
+    mimetype: string;
+    size: number;
+    url: string;
+    uploadedAt: string;
+  }>;
+  createdAt: string;
+  rejectionReason?: string;
+}
+
+interface Stats {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  hospitalsVisited: number;
+}
 
 export const PatientDashboard: React.FC = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
+  const [records, setRecords] = useState<Record[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedRecord, setSelectedRecord] = useState<Record | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Derived Stats
-  const pendingApprovals = MOCK_RECORDS.filter(r => r.status === 'PENDING').length + MOCK_PENDING_APPOINTMENTS.length;
-  const upcomingReminders = MOCK_REMINDERS.filter(r => r.status === 'UPCOMING' || r.status === 'REFILL_NEEDED').length;
-  
+  // Fetch records and stats
+  useEffect(() => {
+    fetchRecords();
+    fetchStats();
+  }, []);
+
+  const fetchRecords = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/api/records', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch records');
+
+      const data = await response.json();
+      setRecords(data.records);
+    } catch (error) {
+      console.error('❌ Error fetching records:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/api/records/stats', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch stats');
+
+      const data = await response.json();
+      setStats(data.stats);
+    } catch (error) {
+      console.error('❌ Error fetching stats:', error);
+    }
+  };
+
+  const handleApprove = async (recordId: string) => {
+    setActionLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:5000/api/records/${recordId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: 'APPROVED' }),
+      });
+
+      if (!response.ok) throw new Error('Failed to approve record');
+
+      console.log('✅ Record approved');
+      await fetchRecords();
+      await fetchStats();
+      setSelectedRecord(null);
+    } catch (error) {
+      console.error('❌ Error approving record:', error);
+      alert('Failed to approve record');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedRecord || !rejectionReason.trim()) {
+      alert('Please provide a reason for rejection');
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:5000/api/records/${selectedRecord._id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          status: 'REJECTED',
+          rejectionReason: rejectionReason.trim()
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to reject record');
+
+      console.log('✅ Record rejected');
+      await fetchRecords();
+      await fetchStats();
+      setSelectedRecord(null);
+      setShowRejectModal(false);
+      setRejectionReason('');
+    } catch (error) {
+      console.error('❌ Error rejecting record:', error);
+      alert('Failed to reject record');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const downloadFile = (fileUrl: string, fileName: string) => {
+    const link = document.createElement('a');
+    link.href = `http://localhost:5000${fileUrl}`;
+    link.download = fileName;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filter records
+  const filteredRecords = records.filter(record => {
+    const matchesStatus = filterStatus === 'all' || record.status === filterStatus;
+    const matchesSearch = record.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         record.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (record.hospital.hospitalName || record.hospital.name).toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'APPROVED': return 'bg-green-100 text-green-800 border-green-200';
+      case 'REJECTED': return 'bg-red-100 text-red-800 border-red-200';
+      case 'PENDING': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'APPROVED': return <CheckCircle className="w-4 h-4" />;
+      case 'REJECTED': return <XCircle className="w-4 h-4" />;
+      case 'PENDING': return <Clock className="w-4 h-4" />;
+      default: return null;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center">
+        <Loader className="w-8 h-8 animate-spin text-primary-600" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-4">
-          <img src={user?.avatar} alt="Profile" className="w-14 h-14 rounded-full border-2 border-primary-100" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Hello, {user?.name?.split(' ')[0]} 👋</h1>
-            <p className="text-gray-500 text-sm">Here's your health overview for today.</p>
+      <div className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Medical Records</h1>
+              <p className="text-sm text-gray-600 mt-1">Review and manage your health records</p>
+            </div>
+            <Button variant="outline" onClick={() => window.location.href = '/'}>
+              Logout
+            </Button>
           </div>
         </div>
-        
-        <div className="flex items-center space-x-3">
-           <div className="relative cursor-pointer p-2 bg-white rounded-full shadow-sm hover:text-primary-600 transition-colors">
-              <Bell size={20} />
-              <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
-           </div>
-           <div className="flex items-center px-3 py-1.5 bg-ai-500/10 rounded-full border border-ai-500/20">
-              <Brain size={16} className="text-ai-600 mr-1.5" />
-              <span className="text-xs font-bold text-ai-700">AI Supported</span>
-           </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        {/* Stats Cards */}
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Total Records</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                </div>
+                <FileText className="w-8 h-8 text-primary-600" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Pending</p>
+                  <p className="text-2xl font-bold text-yellow-600">{stats.pending}</p>
+                </div>
+                <Clock className="w-8 h-8 text-yellow-600" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Approved</p>
+                  <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
+                </div>
+                <CheckCircle className="w-8 h-8 text-green-600" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Rejected</p>
+                  <p className="text-2xl font-bold text-red-600">{stats.rejected}</p>
+                </div>
+                <XCircle className="w-8 h-8 text-red-600" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Hospitals</p>
+                  <p className="text-2xl font-bold text-primary-600">{stats.hospitalsVisited}</p>
+                </div>
+                <Hospital className="w-8 h-8 text-primary-600" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filters */}
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search records..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFilterStatus('all')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  filterStatus === 'all'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setFilterStatus('PENDING')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  filterStatus === 'PENDING'
+                    ? 'bg-yellow-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Pending
+              </button>
+              <button
+                onClick={() => setFilterStatus('APPROVED')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  filterStatus === 'APPROVED'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Approved
+              </button>
+              <button
+                onClick={() => setFilterStatus('REJECTED')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  filterStatus === 'REJECTED'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Rejected
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Records List */}
+        <div className="space-y-4">
+          {filteredRecords.length === 0 ? (
+            <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-100">
+              <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Records Found</h3>
+              <p className="text-gray-600">
+                {filterStatus === 'all' 
+                  ? "You don't have any medical records yet."
+                  : `No ${filterStatus.toLowerCase()} records found.`}
+              </p>
+            </div>
+          ) : (
+            filteredRecords.map((record) => (
+              <div
+                key={record._id}
+                className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-lg font-semibold text-gray-900">{record.title}</h3>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getStatusColor(record.status)}`}>
+                        {getStatusIcon(record.status)}
+                        {record.status}
+                      </span>
+                    </div>
+                    <p className="text-gray-600 text-sm mb-3">{record.description}</p>
+                    
+                    <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <Hospital className="w-4 h-4" />
+                        <span>{record.hospital.hospitalName || record.hospital.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        <span>{new Date(record.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      {record.files.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <File className="w-4 h-4" />
+                          <span>{record.files.length} file(s)</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {record.status === 'REJECTED' && record.rejectionReason && (
+                      <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium text-red-900">Rejection Reason:</p>
+                          <p className="text-sm text-red-700">{record.rejectionReason}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 ml-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedRecord(record)}
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      View
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Files */}
+                {record.files.length > 0 && (
+                  <div className="border-t border-gray-100 pt-4 mt-4">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Attached Files:</p>
+                    <div className="space-y-2">
+                      {record.files.map((file, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between bg-gray-50 p-3 rounded-lg"
+                        >
+                          <div className="flex items-center gap-3">
+                            <File className="w-5 h-5 text-primary-600" />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{file.originalName}</p>
+                              <p className="text-xs text-gray-500">
+                                {(file.size / 1024 / 1024).toFixed(2)} MB • {file.mimetype}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => downloadFile(file.url, file.originalName)}
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <div className="bg-gradient-to-br from-primary-600 to-primary-700 text-white p-6 rounded-2xl shadow-lg shadow-primary-500/30 hover:scale-[1.02] transition-transform">
-            <div className="flex justify-between items-start mb-4">
-               <div className="p-2 bg-white/20 rounded-lg"><Activity size={24} /></div>
-               <span className="bg-white/20 px-2 py-1 rounded text-xs font-medium">Updated</span>
+      {/* View/Action Modal */}
+      {selectedRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white">
+              <h3 className="text-xl font-bold text-gray-900">Record Details</h3>
+              <button onClick={() => setSelectedRecord(null)} className="text-gray-400 hover:text-gray-600">
+                <XCircle className="w-6 h-6" />
+              </button>
             </div>
-            <h3 className="text-3xl font-bold mb-1">{MOCK_RECORDS.filter(r => r.status === 'APPROVED').length}</h3>
-            <p className="text-primary-100 text-sm">Verified Records</p>
-            <Button 
-               size="sm" 
-               variant="ghost" 
-               className="mt-4 w-full justify-between text-white hover:bg-white/10 border border-white/20"
-               onClick={() => navigate('/patient/timeline')}
-            >
-               View Timeline <ChevronRight size={16} />
-            </Button>
-         </div>
 
-         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-yellow-50 rounded-bl-full -mr-4 -mt-4 group-hover:scale-110 transition-transform"></div>
-            <div className="flex justify-between items-start mb-4 relative z-10">
-               <div className="p-2 bg-yellow-50 text-yellow-600 rounded-lg"><AlertCircle size={24} /></div>
-               {pendingApprovals > 0 && (
-                 <span className="animate-pulse bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold">Action Req.</span>
-               )}
-            </div>
-            <h3 className="text-3xl font-bold text-gray-900 mb-1 relative z-10">{pendingApprovals}</h3>
-            <p className="text-gray-500 text-sm relative z-10">Pending Approvals</p>
-            <Button 
-               size="sm" 
-               variant="outline" 
-               className="mt-4 w-full justify-between group-hover:border-yellow-200 group-hover:bg-yellow-50/50"
-               onClick={() => navigate('/patient/approvals')}
-            >
-               Review Now <ChevronRight size={16} />
-            </Button>
-         </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-2xl font-bold text-gray-900">{selectedRecord.title}</h4>
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getStatusColor(selectedRecord.status)}`}>
+                    {getStatusIcon(selectedRecord.status)}
+                    {selectedRecord.status}
+                  </span>
+                </div>
 
-         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-purple-50 rounded-bl-full -mr-4 -mt-4 group-hover:scale-110 transition-transform"></div>
-            <div className="flex justify-between items-start mb-4 relative z-10">
-               <div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><Clock size={24} /></div>
-               {upcomingReminders > 0 && (
-                 <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold flex items-center">
-                   <Brain size={10} className="mr-1"/> AI
-                 </span>
-               )}
-            </div>
-            <h3 className="text-3xl font-bold text-gray-900 mb-1 relative z-10">{upcomingReminders}</h3>
-            <p className="text-gray-500 text-sm relative z-10">Active Reminders</p>
-            <Button 
-               size="sm" 
-               variant="outline" 
-               className="mt-4 w-full justify-between group-hover:border-purple-200 group-hover:bg-purple-50/50"
-               onClick={() => navigate('/patient/reminders')}
-            >
-               View Reminders <ChevronRight size={16} />
-            </Button>
-         </div>
-      </div>
-
-      {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-         
-         {/* Left: Recent Activity Feed */}
-         <div className="lg:col-span-2 space-y-6">
-            <div className="flex justify-between items-center">
-               <h2 className="text-lg font-bold text-gray-900">Recent Activity</h2>
-               <button onClick={() => navigate('/patient/timeline')} className="text-sm text-primary-600 hover:underline font-medium">View Full Timeline</button>
-            </div>
-            
-            <div className="space-y-4">
-               {MOCK_RECORDS.slice(0, 3).map(record => (
-                  <div key={record.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-start gap-4 hover:border-primary-100 transition-colors cursor-pointer" onClick={() => navigate('/patient/timeline')}>
-                     <div className={`p-3 rounded-full flex-shrink-0 ${
-                        record.status === 'APPROVED' ? 'bg-green-50 text-green-600' :
-                        record.status === 'PENDING' ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-600'
-                     }`}>
-                        <FileText size={20} />
-                     </div>
-                     <div className="flex-1">
-                        <div className="flex justify-between">
-                           <h4 className="font-bold text-gray-900 text-sm">{record.title}</h4>
-                           <span className="text-xs text-gray-400">{record.date}</span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">{record.hospitalName}</p>
-                        
-                        <div className="flex gap-2 mt-2">
-                           {record.aiAnalyzed && (
-                             <span className="text-[10px] flex items-center bg-ai-50 text-ai-700 px-1.5 py-0.5 rounded border border-ai-100">
-                                <Brain size={10} className="mr-1" /> AI Analyzed
-                             </span>
-                           )}
-                           {record.status === 'PENDING' && (
-                             <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold">Action Needed</span>
-                           )}
-                        </div>
-                     </div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-600 mb-1">Hospital</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedRecord.hospital.hospitalName || selectedRecord.hospital.name}
+                    </p>
                   </div>
-               ))}
-            </div>
-         </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-600 mb-1">Date</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {new Date(selectedRecord.createdAt).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                </div>
 
-         {/* Right: Quick Actions & Upcoming */}
-         <div className="space-y-6">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-               <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
-               <div className="space-y-3">
-                  <Button fullWidth variant="outline" onClick={() => navigate('/patient/appointments')} className="justify-start text-left text-sm">
-                     <Calendar size={16} className="mr-2 text-primary-600" /> Book Appointment
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  <p className="text-xs text-gray-600 mb-2">Description</p>
+                  <p className="text-sm text-gray-900">{selectedRecord.description}</p>
+                </div>
+
+                {selectedRecord.files.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-3">Attached Files ({selectedRecord.files.length})</p>
+                    <div className="space-y-2">
+                      {selectedRecord.files.map((file, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between bg-gray-50 p-3 rounded-lg hover:bg-gray-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <File className="w-5 h-5 text-primary-600" />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{file.originalName}</p>
+                              <p className="text-xs text-gray-500">
+                                {(file.size / 1024 / 1024).toFixed(2)} MB
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => downloadFile(file.url, file.originalName)}
+                          >
+                            <Download className="w-4 h-4 mr-1" />
+                            Download
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {selectedRecord.status === 'PENDING' && (
+                <div className="flex gap-3 pt-4 border-t border-gray-100">
+                  <Button
+                    fullWidth
+                    onClick={() => handleApprove(selectedRecord._id)}
+                    disabled={actionLoading}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {actionLoading ? (
+                      <Loader className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <>
+                        <CheckCircle className="w-5 h-5 mr-2" />
+                        Approve Record
+                      </>
+                    )}
                   </Button>
-                  <Button fullWidth variant="outline" onClick={() => navigate('/patient/profile')} className="justify-start text-left text-sm">
-                     <Activity size={16} className="mr-2 text-green-600" /> Update Vitals
+                  <Button
+                    fullWidth
+                    variant="outline"
+                    onClick={() => {
+                      setShowRejectModal(true);
+                    }}
+                    disabled={actionLoading}
+                    className="border-red-300 text-red-600 hover:bg-red-50"
+                  >
+                    <XCircle className="w-5 h-5 mr-2" />
+                    Reject Record
                   </Button>
-                  <Button fullWidth variant="outline" onClick={() => navigate('/patient/reminders')} className="justify-start text-left text-sm">
-                     <Clock size={16} className="mr-2 text-purple-600" /> Add Reminder
-                  </Button>
-               </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {showRejectModal && selectedRecord && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-100">
+              <h3 className="text-xl font-bold text-gray-900">Reject Record</h3>
             </div>
 
-            <div className="bg-primary-50/50 p-5 rounded-2xl border border-primary-100">
-               <div className="flex items-center mb-3 text-primary-700 font-bold">
-                  <Brain size={18} className="mr-2 animate-pulse" /> AI Insight
-               </div>
-               <p className="text-sm text-gray-600 leading-relaxed">
-                  Your vital trends look stable. Consider scheduling your annual dental checkup soon based on your history.
-               </p>
-               <button onClick={() => navigate('/patient/ai-insights')} className="mt-3 text-xs font-bold text-primary-600 hover:underline">View Health Report</button>
-            </div>
-         </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-red-900">Are you sure?</p>
+                  <p className="text-sm text-red-700">Please provide a reason for rejecting this record.</p>
+                </div>
+              </div>
 
-      </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Rejection Reason *
+                </label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none"
+                  placeholder="Please explain why you're rejecting this record..."
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  fullWidth
+                  variant="outline"
+                  onClick={() => {
+                    setShowRejectModal(false);
+                    setRejectionReason('');
+                  }}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  fullWidth
+                  onClick={handleReject}
+                  disabled={!rejectionReason.trim() || actionLoading}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {actionLoading ? (
+                    <Loader className="w-5 h-5 animate-spin" />
+                  ) : (
+                    'Confirm Rejection'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

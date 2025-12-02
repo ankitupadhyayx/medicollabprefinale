@@ -1,10 +1,10 @@
 import React from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
-import { Landing } from './pages/Landing';
 import { Register } from './pages/Register';
+import { Landing } from './pages/Landing';
 import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
 import { PatientDashboard } from './pages/patient/Dashboard';
@@ -59,10 +59,10 @@ const AppContent: React.FC = () => {
 
       {/* Patient Routes */}
       <Route path="/patient/dashboard" element={<ProtectedRoute><PatientDashboard /></ProtectedRoute>} />
-      <Route path="/patient/approvals" element={<ProtectedRoute><PatientApprovals /></ProtectedRoute>} />
-      <Route path="/patient/timeline" element={<ProtectedRoute><PatientTimeline /></ProtectedRoute>} />
       <Route path="/patient/analytics" element={<ProtectedRoute><PatientAnalytics /></ProtectedRoute>} />
       <Route path="/patient/appointments" element={<ProtectedRoute><PatientAppointments /></ProtectedRoute>} />
+      <Route path="/patient/approvals" element={<ProtectedRoute><PatientApprovals /></ProtectedRoute>} />
+      <Route path="/patient/timeline" element={<ProtectedRoute><PatientTimeline /></ProtectedRoute>} />
       <Route path="/patient/reminders" element={<ProtectedRoute><PatientReminders /></ProtectedRoute>} />
       <Route path="/patient/ai-insights" element={<ProtectedRoute><PatientAIInsights /></ProtectedRoute>} />
       <Route path="/patient/profile" element={<ProtectedRoute><PatientProfile /></ProtectedRoute>} />
@@ -96,9 +96,9 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <HashRouter>
+      <Router>
         <AppContent />
-      </HashRouter>
+      </Router>
     </AuthProvider>
   );
 };

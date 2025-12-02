@@ -1,146 +1,123 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
 
 // Generate JWT Token
-const generateToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET || 'your-secret-key', {
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'your-secret-key-change-this-in-production', {
     expiresIn: '30d',
   });
 };
 
-// @desc    Register new user
-// @route   POST /api/auth/register
+// Register new user
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, role, phone, age, gender, hospitalName, licenseId, specialization } = req.body;
+    const { name, email, password, role, phone, hospitalName, hospitalAddress, licenseNumber } = req.body;
 
-    console.log('📝 Registration request:', { name, email, role });
+    console.log('📝 Registration request:', { email, role });
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    // Check if user exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
       return res.status(400).json({ message: 'User already exists with this email' });
     }
 
-    // Create user object based on role
+    // Create user
     const userData = {
       name,
       email,
-      password, // Will be hashed by pre-save hook
-      role: role.toUpperCase(),
+      password,
+      role,
       phone,
     };
 
-    if (role.toUpperCase() === 'PATIENT') {
-      userData.age = age;
-      userData.gender = gender;
-    }
-
-    if (role.toUpperCase() === 'HOSPITAL') {
+    // Add hospital-specific fields
+    if (role === 'HOSPITAL') {
       userData.hospitalName = hospitalName;
-      userData.licenseId = licenseId;
-      userData.specialization = specialization;
+      userData.hospitalAddress = hospitalAddress;
+      userData.licenseNumber = licenseNumber;
     }
 
-    // Create user
     const user = await User.create(userData);
-    
+
+    console.log('✅ User registered:', { id: user._id, email: user.email, role: user.role });
+
     // Generate token
     const token = generateToken(user._id);
 
-    console.log('✅ User created successfully:', { id: user._id, email: user.email, role: user.role });
-
-    // Return token and user data
     res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        isVerified: user.isVerified,
+        phone: user.phone,
+        hospitalName: user.hospitalName,
       },
     });
   } catch (error) {
     console.error('❌ Registration error:', error);
-    res.status(500).json({ message: error.message || 'Server error during registration' });
+    res.status(500).json({ message: error.message || 'Server error' });
   }
 };
 
-// @desc    Login user
-// @route   POST /api/auth/login
+// Login user
 exports.login = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password } = req.body;
 
-    console.log('📝 Login request:', { email, role });
+    console.log('📝 Login request:', { email });
 
-    // Find user by email
+    // Find user
     const user = await User.findOne({ email }).select('+password');
-
     if (!user) {
-      console.log('❌ User not found');
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    // Check if role matches
-    if (role && user.role !== role.toUpperCase()) {
-      console.log('❌ Role mismatch:', { expected: role, actual: user.role });
-      return res.status(401).json({ message: 'Invalid credentials for this role' });
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     // Check password
     const isPasswordMatch = await user.comparePassword(password);
-
     if (!isPasswordMatch) {
-      console.log('❌ Password mismatch');
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
+
+    console.log('✅ Login successful:', { id: user._id, email: user.email, role: user.role });
 
     // Generate token
     const token = generateToken(user._id);
 
-    console.log('✅ Login successful:', { id: user._id, email: user.email, role: user.role });
-
-    // Return token and user data in CORRECT format
     res.json({
+      success: true,
+      message: 'Login successful',
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        isVerified: user.isVerified,
+        phone: user.phone,
+        hospitalName: user.hospitalName,
       },
     });
   } catch (error) {
     console.error('❌ Login error:', error);
-    res.status(500).json({ message: error.message || 'Server error during login' });
+    res.status(500).json({ message: error.message || 'Server error' });
   }
 };
 
-// @desc    Validate token
-// @route   GET /api/auth/validate
+// Validate token
 exports.validateToken = async (req, res) => {
-  try {
-    // req.user is set by auth middleware
-    if (req.user) {
-      return res.json({ valid: true, user: req.user });
-    }
-    res.status(401).json({ valid: false });
-  } catch (error) {
-    res.status(401).json({ valid: false });
-  }
+  res.json({
+    valid: true,
+    user: req.user,
+  });
 };
 
-// @desc    Get current user
-// @route   GET /api/auth/me
+// Get current user
 exports.getCurrentUser = async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select('-password');
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  res.json({
+    success: true,
+    user: req.user,
+  });
 };

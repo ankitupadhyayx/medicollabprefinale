@@ -20,6 +20,7 @@ import { Button } from '../../components/ui/Button';
 import { HOSPITAL_APPOINTMENT_REQUESTS, MOCK_PATIENTS } from '../../constants';
 import { Appointment } from '../../types';
 import { recordService } from '../../services/recordService';
+import { Loader } from 'lucide-react';
 
 export const HospitalDashboard: React.FC = () => {
   // State
@@ -36,6 +37,7 @@ export const HospitalDashboard: React.FC = () => {
   const [patientEmail, setPatientEmail] = useState('');
   const [recordTitle, setRecordTitle] = useState('');
   const [recordDescription, setRecordDescription] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
 
   // Handlers for Appointment Requests
   const handleAppointmentAction = (id: string, action: 'approve' | 'reject') => {
@@ -51,7 +53,14 @@ export const HospitalDashboard: React.FC = () => {
     if (e.dataTransfer.files?.[0]) setFile(e.dataTransfer.files[0]);
   };
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) setFile(e.target.files[0]);
+    if (e.target.files) {
+      const selectedFiles = Array.from(e.target.files);
+      setFiles(prev => [...prev, ...selectedFiles]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleUpload = async () => {
@@ -73,26 +82,61 @@ export const HospitalDashboard: React.FC = () => {
     setIsUploading(true);
 
     try {
-      // Create record via API
-      await recordService.createRecord({
+      // Create FormData
+      const formData = new FormData();
+      formData.append('title', recordTitle);
+      formData.append('description', recordDescription);
+      formData.append('patientEmail', patientEmail);
+      formData.append('recordType', 'Other');
+      
+      // Append files
+      files.forEach((file, index) => {
+        formData.append('files', file);
+        console.log(`📎 File ${index + 1}:`, file.name, file.size, 'bytes');
+      });
+
+      // Log what we're sending
+      console.log('📤 Sending data:', {
         title: recordTitle,
         description: recordDescription,
         patientEmail: patientEmail,
-        recordType: 'Other', // You can add a dropdown to select type
+        filesCount: files.length
       });
 
-      console.log('✅ Record created successfully');
+      // Log FormData contents
+      for (let pair of formData.entries()) {
+        console.log('FormData:', pair[0], typeof pair[1] === 'object' ? pair[1].constructor.name : pair[1]);
+      }
+
+      const token = localStorage.getItem('token');
+      console.log('🔑 Token:', token ? token.substring(0, 30) + '...' : 'NO TOKEN');
+
+      const response = await fetch('http://localhost:5000/api/records', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Upload failed');
+      }
+
+      console.log('✅ Success:', data);
       setUploadSuccess(true);
     } catch (error: any) {
-      console.error('❌ Upload failed:', error);
-      setUploadError(error.response?.data?.message || 'Failed to upload record. Please try again.');
+      console.error('❌ Error:', error);
+      setUploadError(error.message || 'Failed to upload record. Please try again.');
     } finally {
       setIsUploading(false);
     }
   };
 
   const resetUpload = () => {
-    setFile(null);
+    setFiles([]);
     setPatientEmail('');
     setRecordTitle('');
     setRecordDescription('');
@@ -308,6 +352,51 @@ export const HospitalDashboard: React.FC = () => {
                           </div>
                        )}
 
+                       {/* File Upload Zone */}
+                       <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                             Attach Files (Optional)
+                          </label>
+                          <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-primary-500 transition-colors">
+                             <input
+                               type="file"
+                               id="file-upload"
+                               multiple
+                               accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                               onChange={handleFileChange}
+                               className="hidden"
+                               disabled={isUploading}
+                             />
+                             <label htmlFor="file-upload" className="cursor-pointer">
+                               <UploadCloud className="w-10 h-10 mx-auto text-gray-400 mb-2" />
+                               <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
+                               <p className="text-xs text-gray-500 mt-1">PDF, JPG, PNG, DOC (Max 10MB each)</p>
+                             </label>
+                          </div>
+                          
+                          {/* File List */}
+                          {files.length > 0 && (
+                             <div className="mt-3 space-y-2">
+                                {files.map((file, index) => (
+                                   <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                      <div className="flex items-center gap-2">
+                                         <File className="w-4 h-4 text-primary-600" />
+                                         <span className="text-sm text-gray-700 truncate max-w-[200px]">{file.name}</span>
+                                         <span className="text-xs text-gray-500">({(file.size / 1024).toFixed(1)} KB)</span>
+                                      </div>
+                                      <button
+                                         onClick={() => removeFile(index)}
+                                         className="text-red-500 hover:text-red-700"
+                                         disabled={isUploading}
+                                      >
+                                         <X className="w-4 h-4" />
+                                      </button>
+                                   </div>
+                                ))}
+                             </div>
+                          )}
+                       </div>
+
                        <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
                              Patient Email <span className="text-red-500">*</span>
@@ -355,7 +444,14 @@ export const HospitalDashboard: React.FC = () => {
                           onClick={handleUpload} 
                           disabled={!patientEmail || !recordTitle || !recordDescription || isUploading}
                        >
-                          {isUploading ? 'Creating Record...' : 'Create & Send to Patient'}
+                          {isUploading ? (
+                             <>
+                                <Loader className="w-5 h-5 mr-2 animate-spin" />
+                                Creating Record...
+                             </>
+                          ) : (
+                             'Create & Send to Patient'
+                          )}
                        </Button>
                     </div>
                  ) : (
@@ -367,6 +463,11 @@ export const HospitalDashboard: React.FC = () => {
                        <p className="text-gray-500 mt-2 mb-6 text-sm">
                           Record sent to <span className="font-semibold text-gray-700">{patientEmail}</span> for approval.
                        </p>
+                       {files.length > 0 && (
+                          <p className="text-sm text-gray-600 mb-4">
+                             📎 {files.length} file(s) uploaded successfully
+                          </p>
+                       )}
                        <div className="flex items-center justify-center p-3 bg-blue-50 rounded-lg border border-blue-100 text-blue-800 mb-6 text-xs">
                           <Shield size={14} className="mr-2" />
                           Status: Pending Patient Approval

@@ -1,119 +1,97 @@
-import api from './api';
+import axios from 'axios';
 
-export interface LoginCredentials {
+const API_URL = 'http://localhost:5000/api/auth';
+
+interface LoginData {
   email: string;
   password: string;
-  role?: 'PATIENT' | 'HOSPITAL' | 'ADMIN';
 }
 
-export interface RegisterData {
+interface RegisterData extends LoginData {
   name: string;
-  email: string;
-  password: string;
-  role: 'PATIENT' | 'HOSPITAL' | 'ADMIN';
-  phone: string;
-  age?: number;
-  gender?: string;
-  dateOfBirth?: string;
-  address?: string;
+  role: 'PATIENT' | 'HOSPITAL';
+  phone?: string;
   hospitalName?: string;
-  licenseId?: string;
-  specialization?: string;
-}
-
-export interface AuthResponse {
-  token: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    role: 'PATIENT' | 'HOSPITAL' | 'ADMIN';
-    isVerified?: boolean;
-  };
+  hospitalAddress?: string;
+  licenseNumber?: string;
 }
 
 export const authService = {
-  async register(data: RegisterData): Promise<AuthResponse> {
-    console.log('🚀 Calling register API with:', { ...data, password: '***' });
+  // Register new user
+  register: async (userData: RegisterData) => {
+    console.log('📝 Registration request:', userData);
+    const response = await axios.post(`${API_URL}/register`, userData);
+    console.log('✅ Registration response:', response.data);
     
-    try {
-      const response = await api.post('/auth/register', data);
-      console.log('✅ Registration response:', response.data);
-      
-      // Handle both response formats
-      if (response.data.token && response.data.user) {
-        return response.data;
-      } else if (response.data.token && response.data.id) {
-        // Backend returned flat structure, convert it
-        return {
-          token: response.data.token,
-          user: {
-            id: response.data.id,
-            name: response.data.name,
-            email: response.data.email,
-            role: response.data.role,
-            isVerified: response.data.isVerified,
-          },
-        };
-      }
-      
-      throw new Error('Invalid response format from server');
-    } catch (error: any) {
-      console.error('❌ Registration error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
-      throw error;
+    // Save token and user data
+    if (response.data.token) {
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
     }
+    
+    return response.data;
   },
 
-  async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    console.log('🚀 Sending login request:', { ...credentials, password: '***' });
+  // Login user
+  login: async (loginData: LoginData) => {
+    console.log('🔐 Sending login request:', { email: loginData.email });
     
-    try {
-      const response = await api.post('/auth/login', credentials);
-      console.log('✅ Login response:', response.data);
-      
-      // Handle both response formats
-      if (response.data.token && response.data.user) {
-        return response.data;
-      } else if (response.data.token && response.data.id) {
-        // Backend returned flat structure, convert it
-        return {
-          token: response.data.token,
-          user: {
-            id: response.data.id,
-            name: response.data.name,
-            email: response.data.email,
-            role: response.data.role,
-            isVerified: response.data.isVerified,
-          },
-        };
-      }
-      
-      throw new Error('Invalid response format from server');
-    } catch (error: any) {
-      console.error('❌ Login error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
-      throw error;
+    const response = await axios.post(`${API_URL}/login`, loginData);
+    
+    console.log('✅ Login response:', response.data);
+    
+    // Save token and user data to localStorage
+    if (response.data.token) {
+      localStorage.setItem('token', response.data.token);
+      console.log('💾 Token saved:', response.data.token.substring(0, 20) + '...');
     }
+    
+    if (response.data.user) {
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      console.log('💾 User saved:', response.data.user);
+    }
+    
+    return response.data;
   },
 
-  async validateToken(): Promise<boolean> {
+  // Logout user
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    console.log('👋 Logged out');
+  },
+
+  // Get current user
+  getCurrentUser: () => {
+    const userStr = localStorage.getItem('user');
+    return userStr ? JSON.parse(userStr) : null;
+  },
+
+  // Get token
+  getToken: () => {
+    return localStorage.getItem('token');
+  },
+
+  // Check if user is authenticated
+  isAuthenticated: () => {
+    return !!localStorage.getItem('token');
+  },
+
+  // Validate token with backend
+  validateToken: async () => {
     try {
-      const response = await api.get('/auth/validate');
-      return response.data.valid === true;
+      const token = localStorage.getItem('token');
+      if (!token) return false;
+
+      const response = await axios.get(`${API_URL}/validate`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      return response.data.valid;
     } catch (error) {
-      console.error('Token validation failed:', error);
       return false;
     }
-  },
-
-  logout() {
-    localStorage.removeItem('user');
   },
 };
