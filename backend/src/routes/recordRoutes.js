@@ -1,20 +1,30 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/auth');
-const roleCheck = require('../middleware/roleCheck');
-const upload = require('../middleware/upload');
-const { uploadRecord, getPendingRecords, getTimeline, updateStatus } = require('../controllers/recordController');
+const {
+  createRecord,
+  getRecords,
+  getRecordById,
+  updateRecordStatus,
+  updateRecord,
+  deleteRecord,
+  getRecordStats,
+} = require('../controllers/recordController');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
-router.post('/upload', protect, roleCheck('HOSPITAL'), upload.single('file'), uploadRecord);
-router.get('/pending', protect, roleCheck('PATIENT'), getPendingRecords);
-router.get('/timeline', protect, roleCheck('PATIENT'), getTimeline);
-router.patch('/:id/approve', protect, roleCheck('PATIENT'), (req, res) => {
-    req.body.status = 'APPROVED';
-    updateStatus(req, res);
-});
-router.patch('/:id/reject', protect, roleCheck('PATIENT'), (req, res) => {
-    req.body.status = 'REJECTED';
-    updateStatus(req, res);
-});
+// All routes require authentication
+router.use(protect);
+
+// Public routes (all authenticated users)
+router.get('/', getRecords);
+router.get('/stats', getRecordStats);
+router.get('/:id', getRecordById);
+
+// Hospital routes
+router.post('/', authorize('HOSPITAL'), createRecord);
+router.put('/:id', authorize('HOSPITAL', 'ADMIN'), updateRecord);
+router.delete('/:id', authorize('HOSPITAL', 'ADMIN'), deleteRecord);
+
+// Patient routes
+router.put('/:id/status', authorize('PATIENT'), updateRecordStatus);
 
 module.exports = router;

@@ -22,6 +22,36 @@ export interface MedicalRecord {
   files?: Array<{ url: string; name: string }>;
 }
 
+// Add this new interface for backend records
+export interface Record {
+  _id: string;
+  title: string;
+  description: string;
+  patient: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  hospital: {
+    _id: string;
+    name: string;
+    hospitalName?: string;
+    email: string;
+  };
+  hospitalName: string;
+  recordType: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejectionReason?: string;
+  metadata?: {
+    doctorName?: string;
+    department?: string;
+    dateOfVisit?: string;
+    diagnosis?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Hospital {
   id: string;
   name: string;

@@ -1,51 +1,77 @@
 const mongoose = require('mongoose');
-const { encrypt, decrypt } = require('../utils/crypto');
 
-const recordSchema = new mongoose.Schema({
-  patient: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  hospital: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  
-  type: { 
-    type: String, 
-    enum: ['Lab Report', 'Prescription', 'Bill', 'Imaging', 'Discharge Summary'],
-    required: true 
+const recordSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: [true, 'Please provide a title'],
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: [true, 'Please provide a description'],
+    },
+    patient: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    hospital: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    hospitalName: {
+      type: String,
+      required: true,
+    },
+    recordType: {
+      type: String,
+      enum: ['Lab Report', 'Prescription', 'Imaging', 'Discharge Summary', 'Bill', 'Other'],
+      default: 'Other',
+    },
+    status: {
+      type: String,
+      enum: ['PENDING', 'APPROVED', 'REJECTED'],
+      default: 'PENDING',
+    },
+    rejectionReason: {
+      type: String,
+    },
+    files: [
+      {
+        filename: String,
+        originalName: String,
+        mimetype: String,
+        size: Number,
+        url: String,
+        uploadedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    metadata: {
+      doctorName: String,
+      department: String,
+      dateOfVisit: Date,
+      diagnosis: String,
+      medications: [String],
+      testResults: mongoose.Schema.Types.Mixed,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
   },
-  title: { type: String, required: true },
-  description: { type: String }, // Encrypted
-  
-  fileUrl: { type: String, required: true },
-  filePublicId: { type: String }, 
-  
-  status: { 
-    type: String, 
-    enum: ['PENDING', 'APPROVED', 'REJECTED'], 
-    default: 'PENDING' 
-  },
-  
-  aiVerified: { type: Boolean, default: false },
-  tags: [String]
-}, { timestamps: true });
-
-// Hooks for Encryption/Decryption
-recordSchema.pre('save', function(next) {
-  if (this.isModified('description') && this.description) {
-    this.description = encrypt(this.description);
+  {
+    timestamps: true,
   }
-  next();
-});
+);
 
-recordSchema.post(['find', 'findOne'], function(docs) {
-  if (!docs) return;
-  const decryptDoc = (doc) => {
-    if (doc && doc.description && doc.description.includes(':')) {
-      doc.description = decrypt(doc.description);
-    }
-  };
-  if (Array.isArray(docs)) {
-    docs.forEach(decryptDoc);
-  } else {
-    decryptDoc(docs);
-  }
-});
+// Index for faster queries
+recordSchema.index({ patient: 1, status: 1 });
+recordSchema.index({ hospital: 1, status: 1 });
+recordSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Record', recordSchema);

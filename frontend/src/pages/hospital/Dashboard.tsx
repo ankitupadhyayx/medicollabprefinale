@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   UploadCloud, 
@@ -20,6 +19,7 @@ import {
 import { Button } from '../../components/ui/Button';
 import { HOSPITAL_APPOINTMENT_REQUESTS, MOCK_PATIENTS } from '../../constants';
 import { Appointment } from '../../types';
+import { recordService } from '../../services/recordService';
 
 export const HospitalDashboard: React.FC = () => {
   // State
@@ -31,15 +31,15 @@ export const HospitalDashboard: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [patientId, setPatientId] = useState('');
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [patientEmail, setPatientEmail] = useState('');
   const [recordTitle, setRecordTitle] = useState('');
+  const [recordDescription, setRecordDescription] = useState('');
 
   // Handlers for Appointment Requests
   const handleAppointmentAction = (id: string, action: 'approve' | 'reject') => {
     setAppointmentRequests(prev => prev.filter(req => req.id !== id));
-    // In real app, API call here
   };
 
   // Handlers for Upload
@@ -53,24 +53,52 @@ export const HospitalDashboard: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) setFile(e.target.files[0]);
   };
-  const handleUpload = () => {
-    if (!file) return;
+
+  const handleUpload = async () => {
+    setUploadError(null);
+    
+    // Validation
+    if (!patientEmail || !recordTitle || !recordDescription) {
+      setUploadError('Please fill in all required fields');
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^\S+@\S+\.\S+$/;
+    if (!emailRegex.test(patientEmail)) {
+      setUploadError('Please enter a valid email address');
+      return;
+    }
+
     setIsUploading(true);
-    setUploadProgress(0);
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        const next = prev + Math.random() * 20;
-        if (next >= 100) {
-          clearInterval(interval);
-          setTimeout(() => { setIsUploading(false); setUploadSuccess(true); }, 500);
-          return 100;
-        }
-        return next;
+
+    try {
+      // Create record via API
+      await recordService.createRecord({
+        title: recordTitle,
+        description: recordDescription,
+        patientEmail: patientEmail,
+        recordType: 'Other', // You can add a dropdown to select type
       });
-    }, 200);
+
+      console.log('✅ Record created successfully');
+      setUploadSuccess(true);
+    } catch (error: any) {
+      console.error('❌ Upload failed:', error);
+      setUploadError(error.response?.data?.message || 'Failed to upload record. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
   };
+
   const resetUpload = () => {
-    setFile(null); setPatientId(''); setRecordTitle(''); setUploadSuccess(false); setUploadProgress(0); setShowUploadModal(false);
+    setFile(null);
+    setPatientEmail('');
+    setRecordTitle('');
+    setRecordDescription('');
+    setUploadSuccess(false);
+    setUploadError(null);
+    setShowUploadModal(false);
   };
 
   return (
@@ -148,7 +176,7 @@ export const HospitalDashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* --- Left Column: Patient List --- */}
+        {/* ...existing patient list code... */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
              <div className="p-6 border-b border-gray-100 flex justify-between items-center">
@@ -212,7 +240,7 @@ export const HospitalDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* --- Right Column: Appointment Requests --- */}
+        {/* ...existing appointment requests code... */}
         <div className="lg:col-span-1 space-y-6">
            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-full">
               <div className="flex items-center justify-between mb-6">
@@ -260,7 +288,7 @@ export const HospitalDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* --- MODAL: Upload Document --- */}
+      {/* --- MODAL: Upload Document (UPDATED WITH REAL API) --- */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up">
@@ -272,54 +300,62 @@ export const HospitalDashboard: React.FC = () => {
               <div className="p-6">
                  {!uploadSuccess ? (
                     <div className="space-y-5">
-                       {/* File Drop Zone */}
-                       <div 
-                          onDragOver={handleDragOver}
-                          onDragLeave={handleDragLeave}
-                          onDrop={handleDrop}
-                          onClick={() => document.getElementById('doc-upload')?.click()}
-                          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${isDragging ? 'border-primary-500 bg-primary-50' : 'border-gray-300 hover:bg-gray-50'}`}
-                       >
-                          <input id="doc-upload" type="file" className="hidden" onChange={handleFileChange} />
-                          {!file ? (
-                             <>
-                                <div className="w-12 h-12 bg-primary-50 text-primary-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                                   <UploadCloud />
-                                </div>
-                                <p className="text-sm font-medium text-gray-900">Click to upload or drag and drop</p>
-                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG (Max 10MB)</p>
-                             </>
-                          ) : (
-                             <div className="flex items-center justify-center space-x-2">
-                                <File className="text-primary-600" />
-                                <span className="text-sm font-medium text-gray-900 truncate max-w-[200px]">{file.name}</span>
-                             </div>
-                          )}
-                       </div>
-
-                       <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID / Email</label>
-                          <input type="text" value={patientId} onChange={(e) => setPatientId(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" placeholder="P-12345" />
-                       </div>
-                       <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Record Title</label>
-                          <input type="text" value={recordTitle} onChange={(e) => setRecordTitle(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Annual Report" />
-                       </div>
-
-                       {isUploading && (
-                          <div className="space-y-1">
-                             <div className="flex justify-between text-xs font-medium text-gray-500">
-                                <span>Encrypting & Uploading...</span>
-                                <span>{Math.round(uploadProgress)}%</span>
-                             </div>
-                             <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                                <div className="bg-primary-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
-                             </div>
+                       {/* Error Message */}
+                       {uploadError && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                             <p className="text-sm text-red-700">{uploadError}</p>
                           </div>
                        )}
 
-                       <Button fullWidth onClick={handleUpload} disabled={!file || !patientId || !recordTitle || isUploading}>
-                          {isUploading ? 'Processing...' : 'Secure Upload'}
+                       <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                             Patient Email <span className="text-red-500">*</span>
+                          </label>
+                          <input 
+                             type="email" 
+                             value={patientEmail} 
+                             onChange={(e) => setPatientEmail(e.target.value)} 
+                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" 
+                             placeholder="patient@example.com" 
+                             disabled={isUploading}
+                          />
+                       </div>
+
+                       <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                             Record Title <span className="text-red-500">*</span>
+                          </label>
+                          <input 
+                             type="text" 
+                             value={recordTitle} 
+                             onChange={(e) => setRecordTitle(e.target.value)} 
+                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" 
+                             placeholder="Blood Test Results" 
+                             disabled={isUploading}
+                          />
+                       </div>
+
+                       <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                             Description <span className="text-red-500">*</span>
+                          </label>
+                          <textarea 
+                             value={recordDescription} 
+                             onChange={(e) => setRecordDescription(e.target.value)} 
+                             rows={3}
+                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" 
+                             placeholder="Complete blood count analysis, all parameters within normal range..." 
+                             disabled={isUploading}
+                          />
+                       </div>
+
+                       <Button 
+                          fullWidth 
+                          onClick={handleUpload} 
+                          disabled={!patientEmail || !recordTitle || !recordDescription || isUploading}
+                       >
+                          {isUploading ? 'Creating Record...' : 'Create & Send to Patient'}
                        </Button>
                     </div>
                  ) : (
@@ -327,11 +363,13 @@ export const HospitalDashboard: React.FC = () => {
                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
                           <CheckCircle size={32} />
                        </div>
-                       <h3 className="text-xl font-bold text-gray-900">Upload Successful</h3>
-                       <p className="text-gray-500 mt-2 mb-6 text-sm">Record encrypted and stored on blockchain.</p>
+                       <h3 className="text-xl font-bold text-gray-900">Record Created Successfully!</h3>
+                       <p className="text-gray-500 mt-2 mb-6 text-sm">
+                          Record sent to <span className="font-semibold text-gray-700">{patientEmail}</span> for approval.
+                       </p>
                        <div className="flex items-center justify-center p-3 bg-blue-50 rounded-lg border border-blue-100 text-blue-800 mb-6 text-xs">
                           <Shield size={14} className="mr-2" />
-                          Hash: 0x71C...9A23
+                          Status: Pending Patient Approval
                        </div>
                        <Button onClick={resetUpload} variant="outline">Upload Another</Button>
                     </div>

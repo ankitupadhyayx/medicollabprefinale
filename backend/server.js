@@ -19,8 +19,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
+// Routes - CHECK IF THESE FILES EXIST
 app.use('/api/auth', require('./src/routes/authRoutes'));
+app.use('/api/records', require('./src/routes/recordRoutes'));
 
 // Health check
 app.get('/api/health', (req, res) => {
