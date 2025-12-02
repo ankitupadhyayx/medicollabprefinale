@@ -1,209 +1,374 @@
-
-import React, { useState } from 'react';
-import { MOCK_HOSPITAL_PROFILE } from '../../constants';
+import React, { useState, useEffect } from 'react';
+import { 
+  Building2, 
+  Mail, 
+  Phone, 
+  MapPin, 
+  FileText, 
+  Edit2, 
+  Save, 
+  X,
+  Shield,
+  CheckCircle,
+  AlertCircle,
+  Camera,
+  Loader
+} from 'lucide-react';
 import { Button } from '../../components/ui/Button';
-import { Building2, Mail, Phone, MapPin, Globe, Camera, Save, CheckCircle, Shield } from 'lucide-react';
+
+interface HospitalProfile {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  hospitalName?: string;
+  hospitalAddress?: string;
+  licenseNumber?: string;
+  role: string;
+  createdAt: string;
+}
 
 export const HospitalProfile: React.FC = () => {
-  const [profile, setProfile] = useState(MOCK_HOSPITAL_PROFILE);
-  const [isEditing, setIsEditing] = useState(false);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [profile, setProfile] = useState<HospitalProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Mock API Save
-    setIsEditing(false);
-    setSuccessMsg('Profile details updated successfully.');
-    setTimeout(() => setSuccessMsg(null), 3000);
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    hospitalName: '',
+    hospitalAddress: '',
+  });
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const userStr = localStorage.getItem('user');
+      
+      if (!userStr) {
+        throw new Error('User data not found');
+      }
+
+      const user = JSON.parse(userStr);
+      setProfile(user);
+      setFormData({
+        name: user.name || '',
+        phone: user.phone || '',
+        hospitalName: user.hospitalName || user.name || '',
+        hospitalAddress: user.hospitalAddress || '',
+      });
+    } catch (error) {
+      console.error('❌ Error fetching profile:', error);
+      setError('Failed to load profile');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return (
-    <div className="space-y-6 animate-fadeIn">
+  const handleSave = async () => {
+    setError(null);
+    setSaving(true);
+
+    try {
+      const updatedUser = { ...profile, ...formData };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setProfile(updatedUser as HospitalProfile);
       
-      {/* Success Toast */}
-      {successMsg && (
-        <div className="fixed bottom-6 right-6 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg z-50 flex items-center animate-fade-in-up">
-          <CheckCircle size={18} className="text-green-400 mr-2" />
-          {successMsg}
+      setSuccess(true);
+      setEditing(false);
+      
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (error: any) {
+      console.error('❌ Error updating profile:', error);
+      setError(error.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    if (profile) {
+      setFormData({
+        name: profile.name || '',
+        phone: profile.phone || '',
+        hospitalName: profile.hospitalName || profile.name || '',
+        hospitalAddress: profile.hospitalAddress || '',
+      });
+    }
+    setEditing(false);
+    setError(null);
+  };
+
+  const getInitials = () => {
+    const name = profile?.hospitalName || profile?.name || 'H';
+    return name.charAt(0).toUpperCase();
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader className="w-8 h-8 animate-spin text-primary-600" />
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-600">Failed to load profile</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Hospital Profile</h1>
+          <p className="text-sm text-gray-600 mt-1">Manage your hospital information</p>
+        </div>
+        {!editing && (
+          <Button onClick={() => setEditing(true)}>
+            <Edit2 className="w-4 h-4 mr-2" />
+            Edit Profile
+          </Button>
+        )}
+      </div>
+
+      {success && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3 animate-fade-in">
+          <CheckCircle className="w-5 h-5 text-green-600" />
+          <p className="text-sm text-green-700 font-medium">Profile updated successfully!</p>
         </div>
       )}
 
-      {/* Header / Banner */}
-      <div className="relative h-48 md:h-64 rounded-2xl overflow-hidden bg-gray-200 group">
-        <img src={profile.banner} alt="Hospital Banner" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-black/30"></div>
-        <button className="absolute bottom-4 right-4 bg-white/20 hover:bg-white/40 text-white p-2 rounded-lg backdrop-blur-md transition-colors">
-          <Camera size={20} /> <span className="text-sm ml-1 font-medium">Change Cover</span>
-        </button>
-      </div>
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600" />
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
 
-      <div className="relative px-4 sm:px-6 lg:px-8 -mt-16">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <div className="flex flex-col md:flex-row items-start md:items-end gap-6">
-            <div className="relative -mt-16">
-              <div className="w-32 h-32 rounded-2xl border-4 border-white shadow-lg overflow-hidden bg-white">
-                <img src={profile.avatar} alt="Logo" className="w-full h-full object-cover" />
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="h-32 bg-gradient-to-r from-primary-500 via-medical-500 to-tech-500 relative">
+          <button className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-white transition-colors flex items-center gap-2">
+            <Camera className="w-4 h-4" />
+            Change Cover
+          </button>
+        </div>
+
+        <div className="p-8">
+          <div className="flex items-start gap-6 mb-8">
+            <div className="relative">
+              <div className="w-24 h-24 bg-gradient-to-br from-primary-500 to-medical-500 rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-lg -mt-16 border-4 border-white">
+                {getInitials()}
               </div>
-              <button className="absolute bottom-0 right-0 bg-primary-600 text-white p-1.5 rounded-full shadow border-2 border-white hover:bg-primary-700">
-                <Camera size={14} />
+              <button className="absolute -bottom-2 -right-2 bg-white p-2 rounded-full shadow-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+                <Camera className="w-4 h-4 text-gray-600" />
               </button>
             </div>
-            
-            <div className="flex-1 mb-2">
-               <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-                 {profile.name}
-                 <span className="ml-2 text-green-500" title="Verified Facility">
-                   <CheckCircle size={24} fill="currentColor" className="text-white" />
-                 </span>
-               </h1>
-               <p className="text-gray-500 mt-1 flex items-center">
-                 <MapPin size={14} className="mr-1" /> {profile.address}
-               </p>
-            </div>
 
-            <div className="flex gap-3 mt-4 md:mt-0">
-               {!isEditing ? (
-                 <Button variant="outline" onClick={() => setIsEditing(true)}>Edit Profile</Button>
-               ) : (
-                 <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
-               )}
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-gray-900 mb-1">
+                {profile.hospitalName || profile.name}
+              </h2>
+              <p className="text-gray-600 mb-4">{profile.email}</p>
+              
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-primary-50 text-primary-700 rounded-lg text-sm font-medium">
+                  <Shield className="w-4 h-4" />
+                  Verified Hospital
+                </div>
+                <div className="text-sm text-gray-500">
+                  Member since {new Date(profile.createdAt).toLocaleDateString('en-US', { 
+                    month: 'long', 
+                    year: 'numeric' 
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Stats Strip */}
-          <div className="grid grid-cols-3 gap-4 border-t border-gray-100 mt-8 pt-6 text-center">
-             <div>
-                <div className="text-2xl font-bold text-gray-900">{profile.stats.totalPatients}</div>
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Patients</div>
-             </div>
-             <div className="border-l border-gray-100">
-                <div className="text-2xl font-bold text-gray-900">{profile.stats.doctorsCount}</div>
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Doctors</div>
-             </div>
-             <div className="border-l border-gray-100">
-                <div className="text-2xl font-bold text-gray-900">{profile.stats.recordsUploaded}</div>
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Uploads</div>
-             </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Contact Person Name
+              </label>
+              {editing ? (
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                  placeholder="Dr. John Doe"
+                />
+              ) : (
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                  <Building2 className="w-5 h-5 text-gray-400" />
+                  <span className="text-gray-900">{profile.name}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
+              </label>
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                <Mail className="w-5 h-5 text-gray-400" />
+                <span className="text-gray-900">{profile.email}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Phone Number
+              </label>
+              {editing ? (
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                  placeholder="+1 (555) 000-0000"
+                />
+              ) : (
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                  <Phone className="w-5 h-5 text-gray-400" />
+                  <span className="text-gray-900">{profile.phone || 'Not provided'}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                License Number
+              </label>
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                <FileText className="w-5 h-5 text-gray-400" />
+                <span className="text-gray-900">{profile.licenseNumber || 'Not provided'}</span>
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Hospital Name
+              </label>
+              {editing ? (
+                <input
+                  type="text"
+                  value={formData.hospitalName}
+                  onChange={(e) => setFormData({ ...formData, hospitalName: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                  placeholder="St. Mary's Medical Center"
+                />
+              ) : (
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                  <Building2 className="w-5 h-5 text-gray-400" />
+                  <span className="text-gray-900">{profile.hospitalName || profile.name}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Hospital Address
+              </label>
+              {editing ? (
+                <textarea
+                  value={formData.hospitalAddress}
+                  onChange={(e) => setFormData({ ...formData, hospitalAddress: e.target.value })}
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none resize-none"
+                  placeholder="400 W 113th St, New York, NY 10025"
+                />
+              ) : (
+                <div className="flex items-start gap-3 px-4 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                  <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                  <span className="text-gray-900">{profile.hospitalAddress || 'Not provided'}</span>
+                </div>
+              )}
+            </div>
           </div>
+
+          {editing && (
+            <div className="flex items-center gap-3 mt-6 pt-6 border-t border-gray-100">
+              <Button onClick={handleSave} disabled={saving} className="flex-1">
+                {saving ? (
+                  <>
+                    <Loader className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Changes
+                  </>
+                )}
+              </Button>
+              <Button variant="outline" onClick={handleCancel} disabled={saving} className="flex-1">
+                <X className="w-4 h-4 mr-2" />
+                Cancel
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Detailed Info */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 px-4 sm:px-0">
-         {/* Left: License & Specialization */}
-         <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-               <h3 className="font-bold text-gray-900 text-lg mb-4 flex items-center">
-                 <Shield size={18} className="mr-2 text-primary-600" /> Licensing
-               </h3>
-               <div className="space-y-3">
-                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                     <p className="text-xs text-gray-500 uppercase mb-1">License ID</p>
-                     <p className="font-mono font-bold text-gray-800">{profile.licenseId}</p>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-100 text-green-700">
-                     <span className="text-sm font-bold">Status</span>
-                     <span className="text-xs bg-green-200 px-2 py-1 rounded-full font-bold uppercase">Active</span>
-                  </div>
-               </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 bg-primary-50 rounded-lg">
+              <Shield className="w-5 h-5 text-primary-600" />
             </div>
+            <h3 className="font-semibold text-gray-900">Verification Status</h3>
+          </div>
+          <p className="text-sm text-gray-600 mb-3">Your hospital is verified and active</p>
+          <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+            <CheckCircle className="w-4 h-4" />
+            Verified
+          </div>
+        </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-               <h3 className="font-bold text-gray-900 text-lg mb-4">Specializations</h3>
-               <div className="flex flex-wrap gap-2">
-                  {profile.specialization.map(spec => (
-                     <span key={spec} className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-sm font-medium border border-primary-100">
-                        {spec}
-                     </span>
-                  ))}
-                  {isEditing && (
-                    <button className="px-3 py-1 bg-gray-50 text-gray-400 rounded-full text-sm border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-600">
-                       + Add
-                    </button>
-                  )}
-               </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 bg-blue-50 rounded-lg">
+              <FileText className="w-5 h-5 text-blue-600" />
             </div>
-         </div>
+            <h3 className="font-semibold text-gray-900">Account Type</h3>
+          </div>
+          <p className="text-sm text-gray-600 mb-3">Healthcare Provider Account</p>
+          <div className="text-sm text-blue-600 font-medium">
+            {profile.role ? profile.role.toUpperCase() : 'HOSPITAL'}
+          </div>
+        </div>
 
-         {/* Right: Editable Form */}
-         <div className="lg:col-span-2">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-               <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-bold text-gray-900 text-lg">Facility Details</h3>
-                  {isEditing && (
-                    <Button size="sm" onClick={handleSave}>
-                       <Save size={16} className="mr-2" /> Save Changes
-                    </Button>
-                  )}
-               </div>
-               
-               <form className="space-y-6">
-                  <div>
-                     <label className="block text-sm font-medium text-gray-700 mb-1">About Facility</label>
-                     <textarea 
-                        disabled={!isEditing}
-                        value={profile.description}
-                        onChange={(e) => setProfile({...profile, description: e.target.value})}
-                        rows={4}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500 transition-all resize-none"
-                     />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                           <Mail size={14} className="mr-2 text-gray-400" /> Official Email
-                        </label>
-                        <input 
-                           type="email" 
-                           disabled={!isEditing}
-                           value={profile.email}
-                           onChange={(e) => setProfile({...profile, email: e.target.value})}
-                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500 transition-all"
-                        />
-                     </div>
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                           <Phone size={14} className="mr-2 text-gray-400" /> Contact Phone
-                        </label>
-                        <input 
-                           type="tel" 
-                           disabled={!isEditing}
-                           value={profile.phone}
-                           onChange={(e) => setProfile({...profile, phone: e.target.value})}
-                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500 transition-all"
-                        />
-                     </div>
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                           <Globe size={14} className="mr-2 text-gray-400" /> Website
-                        </label>
-                        <input 
-                           type="text" 
-                           disabled={!isEditing}
-                           value={profile.website}
-                           onChange={(e) => setProfile({...profile, website: e.target.value})}
-                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500 transition-all"
-                        />
-                     </div>
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                           <MapPin size={14} className="mr-2 text-gray-400" /> Address
-                        </label>
-                        <input 
-                           type="text" 
-                           disabled={!isEditing}
-                           value={profile.address}
-                           onChange={(e) => setProfile({...profile, address: e.target.value})}
-                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500 transition-all"
-                        />
-                     </div>
-                  </div>
-               </form>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 bg-purple-50 rounded-lg">
+              <Building2 className="w-5 h-5 text-purple-600" />
             </div>
-         </div>
+            <h3 className="font-semibold text-gray-900">Member Since</h3>
+          </div>
+          <p className="text-sm text-gray-600 mb-3">Account created on</p>
+          <div className="text-sm text-purple-600 font-medium">
+            {new Date(profile.createdAt).toLocaleDateString('en-US', {
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric'
+            })}
+          </div>
+        </div>
       </div>
-
     </div>
   );
 };

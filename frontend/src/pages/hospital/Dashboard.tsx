@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   UploadCloud, 
   File, 
@@ -14,23 +14,49 @@ import {
   Calendar, 
   Clock, 
   Search,
-  Eye
+  Eye,
+  Download,
+  Loader,
+  Filter,
+  TrendingUp,
+  FileText
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
-import { HOSPITAL_APPOINTMENT_REQUESTS, MOCK_PATIENTS } from '../../constants';
-import { Appointment } from '../../types';
-import { recordService } from '../../services/recordService';
-import { Loader } from 'lucide-react';
+
+interface Record {
+  _id: string;
+  title: string;
+  description: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  patient: {
+    name: string;
+    email: string;
+  };
+  files: Array<{
+    filename: string;
+    originalName: string;
+    size: number;
+    url: string;
+  }>;
+  createdAt: string;
+}
+
+interface Stats {
+  total: number;
+  approved: number;
+  pending: number;
+  rejected: number;
+}
 
 export const HospitalDashboard: React.FC = () => {
   // State
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showAIModal, setShowAIModal] = useState(false);
-  const [appointmentRequests, setAppointmentRequests] = useState<Appointment[]>(HOSPITAL_APPOINTMENT_REQUESTS);
+  const [records, setRecords] = useState<Record[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
   // Upload State
-  const [isDragging, setIsDragging] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -39,19 +65,52 @@ export const HospitalDashboard: React.FC = () => {
   const [recordDescription, setRecordDescription] = useState('');
   const [files, setFiles] = useState<File[]>([]);
 
-  // Handlers for Appointment Requests
-  const handleAppointmentAction = (id: string, action: 'approve' | 'reject') => {
-    setAppointmentRequests(prev => prev.filter(req => req.id !== id));
+  // Fetch records and stats on mount
+  useEffect(() => {
+    fetchRecords();
+    fetchStats();
+  }, []);
+
+  const fetchRecords = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/api/records', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch records');
+
+      const data = await response.json();
+      console.log('📊 Records fetched:', data);
+      setRecords(data.records);
+    } catch (error) {
+      console.error('❌ Error fetching records:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Handlers for Upload
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
-  const handleDragLeave = () => { setIsDragging(false); };
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files?.[0]) setFile(e.dataTransfer.files[0]);
+  const fetchStats = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/api/records/stats', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch stats');
+
+      const data = await response.json();
+      console.log('📈 Stats fetched:', data);
+      setStats(data.stats);
+    } catch (error) {
+      console.error('❌ Error fetching stats:', error);
+    }
   };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const selectedFiles = Array.from(e.target.files);
@@ -66,13 +125,11 @@ export const HospitalDashboard: React.FC = () => {
   const handleUpload = async () => {
     setUploadError(null);
     
-    // Validation
     if (!patientEmail || !recordTitle || !recordDescription) {
       setUploadError('Please fill in all required fields');
       return;
     }
 
-    // Email validation
     const emailRegex = /^\S+@\S+\.\S+$/;
     if (!emailRegex.test(patientEmail)) {
       setUploadError('Please enter a valid email address');
@@ -82,35 +139,17 @@ export const HospitalDashboard: React.FC = () => {
     setIsUploading(true);
 
     try {
-      // Create FormData
       const formData = new FormData();
       formData.append('title', recordTitle);
       formData.append('description', recordDescription);
       formData.append('patientEmail', patientEmail);
       formData.append('recordType', 'Other');
       
-      // Append files
-      files.forEach((file, index) => {
+      files.forEach(file => {
         formData.append('files', file);
-        console.log(`📎 File ${index + 1}:`, file.name, file.size, 'bytes');
       });
-
-      // Log what we're sending
-      console.log('📤 Sending data:', {
-        title: recordTitle,
-        description: recordDescription,
-        patientEmail: patientEmail,
-        filesCount: files.length
-      });
-
-      // Log FormData contents
-      for (let pair of formData.entries()) {
-        console.log('FormData:', pair[0], typeof pair[1] === 'object' ? pair[1].constructor.name : pair[1]);
-      }
 
       const token = localStorage.getItem('token');
-      console.log('🔑 Token:', token ? token.substring(0, 30) + '...' : 'NO TOKEN');
-
       const response = await fetch('http://localhost:5000/api/records', {
         method: 'POST',
         headers: {
@@ -125,11 +164,15 @@ export const HospitalDashboard: React.FC = () => {
         throw new Error(data.message || 'Upload failed');
       }
 
-      console.log('✅ Success:', data);
+      console.log('✅ Record created:', data);
       setUploadSuccess(true);
+      
+      // Refresh records and stats
+      await fetchRecords();
+      await fetchStats();
     } catch (error: any) {
-      console.error('❌ Error:', error);
-      setUploadError(error.message || 'Failed to upload record. Please try again.');
+      console.error('❌ Upload error:', error);
+      setUploadError(error.message || 'Failed to upload record');
     } finally {
       setIsUploading(false);
     }
@@ -145,14 +188,35 @@ export const HospitalDashboard: React.FC = () => {
     setShowUploadModal(false);
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'APPROVED': return 'bg-green-100 text-green-800 border-green-200';
+      case 'REJECTED': return 'bg-red-100 text-red-800 border-red-200';
+      case 'PENDING': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const filteredRecords = records.filter(record => 
+    filterStatus === 'all' || record.status === filterStatus
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader className="w-8 h-8 animate-spin text-primary-600" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-fadeIn">
       
-      {/* --- Quick AI Actions --- */}
+      {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <button 
           onClick={() => setShowUploadModal(true)}
-          className="relative overflow-hidden rounded-2xl p-6 bg-gradient-to-r from-primary-600 to-medical-600 text-white shadow-lg shadow-primary-500/20 hover:shadow-xl hover:scale-[1.02] transition-all group text-left"
+          className="relative overflow-hidden rounded-2xl p-6 bg-gradient-to-r from-primary-600 to-medical-600 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all group text-left"
         >
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <UploadCloud size={100} />
@@ -163,188 +227,191 @@ export const HospitalDashboard: React.FC = () => {
             </div>
             <div>
                <h3 className="text-xl font-bold">Upload Document</h3>
-               <p className="text-primary-100 text-sm mt-1">Securely add patient records to blockchain</p>
+               <p className="text-primary-100 text-sm mt-1">Add new patient medical records</p>
             </div>
           </div>
         </button>
 
         <button 
-          onClick={() => setShowAIModal(true)}
-          className="relative overflow-hidden rounded-2xl p-6 bg-gradient-to-r from-tech-600 to-ai-500 text-white shadow-lg shadow-tech-500/20 hover:shadow-xl hover:scale-[1.02] transition-all group text-left"
+          onClick={() => window.location.href = '/#/hospital/reports'}
+          className="relative overflow-hidden rounded-2xl p-6 bg-gradient-to-r from-tech-600 to-ai-500 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all group text-left"
         >
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Brain size={100} />
           </div>
           <div className="relative z-10 flex flex-col h-full justify-between">
             <div className="p-3 bg-white/20 w-fit rounded-xl mb-4 backdrop-blur-sm">
-               <Sparkles size={24} />
+               <TrendingUp size={24} />
             </div>
             <div>
-               <h3 className="text-xl font-bold">AI Insights on Patients</h3>
-               <p className="text-tech-100 text-sm mt-1">Analyze trends & detect anomalies</p>
+               <h3 className="text-xl font-bold">Analytics Dashboard</h3>
+               <p className="text-tech-100 text-sm mt-1">View trends and insights</p>
             </div>
           </div>
         </button>
       </div>
 
-      {/* --- Stats Row --- */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+      {/* Stats Row */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
-               <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Users size={20} /></div>
-               <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded">+12%</span>
+              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                <FileText size={20} />
+              </div>
             </div>
-            <h4 className="text-3xl font-bold text-gray-900">1,240</h4>
-            <p className="text-sm text-gray-500">Active Patients</p>
-         </div>
+            <h4 className="text-3xl font-bold text-gray-900">{stats.total}</h4>
+            <p className="text-sm text-gray-500">Total Records</p>
+          </div>
 
-         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-16 h-16 bg-yellow-50 rounded-bl-full -mr-8 -mt-8"></div>
-            <div className="flex items-center justify-between mb-4 relative z-10">
-               <div className="p-2 bg-yellow-50 text-yellow-600 rounded-lg"><Activity size={20} /></div>
-               <div className="flex items-center text-[10px] font-bold text-ai-600 bg-ai-50 px-2 py-1 rounded border border-ai-100">
-                  <Sparkles size={10} className="mr-1" /> AI Assisted
-               </div>
-            </div>
-            <h4 className="text-3xl font-bold text-gray-900">45</h4>
-            <p className="text-sm text-gray-500">Need Follow-up</p>
-         </div>
-
-         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
-               <div className="p-2 bg-red-50 text-red-600 rounded-lg"><AlertCircle size={20} /></div>
+              <div className="p-2 bg-yellow-50 text-yellow-600 rounded-lg">
+                <Clock size={20} />
+              </div>
             </div>
-            <h4 className="text-3xl font-bold text-gray-900">3</h4>
-            <p className="text-sm text-gray-500">Disputed Records</p>
-         </div>
-      </div>
+            <h4 className="text-3xl font-bold text-gray-900">{stats.pending}</h4>
+            <p className="text-sm text-gray-500">Pending Approval</p>
+          </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* ...existing patient list code... */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-             <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-                <h3 className="font-bold text-gray-900 text-lg">Recent Patients</h3>
-                <div className="relative">
-                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                   <input type="text" placeholder="Search patients..." className="pl-9 pr-4 py-2 bg-gray-50 border-transparent focus:bg-white focus:border-primary-300 rounded-lg text-sm outline-none transition-all w-48 md:w-64" />
-                </div>
-             </div>
-             <div className="overflow-x-auto">
-                <table className="w-full">
-                   <thead className="bg-gray-50/50">
-                      <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                         <th className="px-6 py-4">Patient Name</th>
-                         <th className="px-6 py-4">Date of Birth / Age</th>
-                         <th className="px-6 py-4">Last Visit</th>
-                         <th className="px-6 py-4">Status</th>
-                         <th className="px-6 py-4 text-right">Action</th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-50">
-                      {MOCK_PATIENTS.map((p) => (
-                         <tr key={p.id} className="hover:bg-gray-50/80 transition-colors group">
-                            <td className="px-6 py-4">
-                               <div className="flex items-center">
-                                  <div className="h-8 w-8 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center font-bold text-xs mr-3">
-                                     {p.name.charAt(0)}
-                                  </div>
-                                  <span className="font-medium text-gray-900">{p.name}</span>
-                                  {p.aiFlag && (
-                                     <span className="ml-2 text-yellow-500" title="AI Attention Needed"><AlertCircle size={14} /></span>
-                                  )}
-                               </div>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500">{p.age} yrs ({p.gender})</td>
-                            <td className="px-6 py-4 text-sm text-gray-500">{p.lastVisit}</td>
-                            <td className="px-6 py-4">
-                               <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                                  p.status === 'Critical' ? 'bg-red-100 text-red-700' : 
-                                  p.status === 'Recovered' ? 'bg-green-100 text-green-700' : 
-                                  'bg-blue-100 text-blue-700'
-                               }`}>
-                                  {p.status}
-                               </span>
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                               <button className="text-gray-400 hover:text-primary-600 transition-colors">
-                                  <Eye size={18} />
-                               </button>
-                            </td>
-                         </tr>
-                      ))}
-                   </tbody>
-                </table>
-             </div>
-             <div className="p-4 border-t border-gray-100 text-center">
-                <button className="text-sm font-medium text-primary-600 hover:text-primary-700 flex items-center justify-center mx-auto">
-                   View All Patients <ChevronRight size={16} className="ml-1" />
-                </button>
-             </div>
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-2 bg-green-50 text-green-600 rounded-lg">
+                <CheckCircle size={20} />
+              </div>
+            </div>
+            <h4 className="text-3xl font-bold text-gray-900">{stats.approved}</h4>
+            <p className="text-sm text-gray-500">Approved</p>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-2 bg-red-50 text-red-600 rounded-lg">
+                <AlertCircle size={20} />
+              </div>
+            </div>
+            <h4 className="text-3xl font-bold text-gray-900">{stats.rejected}</h4>
+            <p className="text-sm text-gray-500">Rejected</p>
+          </div>
+        </div>
+      )}
+
+      {/* Upload History */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-900">Upload History</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFilterStatus('all')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  filterStatus === 'all'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setFilterStatus('PENDING')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  filterStatus === 'PENDING'
+                    ? 'bg-yellow-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Pending
+              </button>
+              <button
+                onClick={() => setFilterStatus('APPROVED')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  filterStatus === 'APPROVED'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Approved
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* ...existing appointment requests code... */}
-        <div className="lg:col-span-1 space-y-6">
-           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-full">
-              <div className="flex items-center justify-between mb-6">
-                 <h3 className="font-bold text-gray-900 text-lg">Requests</h3>
-                 <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded-full">{appointmentRequests.length} New</span>
-              </div>
-
-              {appointmentRequests.length === 0 ? (
-                 <div className="text-center py-10 text-gray-400">
-                    <Calendar size={48} className="mx-auto mb-3 opacity-20" />
-                    <p className="text-sm">No pending requests.</p>
-                 </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-4">Record Title</th>
+                <th className="px-6 py-4">Patient</th>
+                <th className="px-6 py-4">Date Uploaded</th>
+                <th className="px-6 py-4">Files</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center">
+                    <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No records found</p>
+                  </td>
+                </tr>
               ) : (
-                 <div className="space-y-4">
-                    {appointmentRequests.map((req) => (
-                       <div key={req.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100 hover:border-primary-200 transition-colors">
-                          <div className="flex justify-between items-start mb-2">
-                             <h4 className="font-bold text-gray-900 text-sm">Patient Appt Request</h4>
-                             <span className="text-xs font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">New</span>
-                          </div>
-                          <p className="text-xs text-gray-500 mb-3 line-clamp-2">{req.reason}</p>
-                          <div className="flex items-center text-xs text-gray-500 mb-4 space-x-3">
-                             <span className="flex items-center"><Calendar size={12} className="mr-1"/> {req.date}</span>
-                             <span className="flex items-center"><Clock size={12} className="mr-1"/> {req.time}</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                             <button 
-                               onClick={() => handleAppointmentAction(req.id, 'reject')}
-                               className="py-1.5 text-xs font-bold text-red-600 bg-white border border-gray-200 rounded-lg hover:bg-red-50 transition-colors"
-                             >
-                                Decline
-                             </button>
-                             <button 
-                               onClick={() => handleAppointmentAction(req.id, 'approve')}
-                               className="py-1.5 text-xs font-bold text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors"
-                             >
-                                Approve
-                             </button>
-                          </div>
-                       </div>
-                    ))}
-                 </div>
+                filteredRecords.map((record) => (
+                  <tr key={record._id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div>
+                        <p className="font-medium text-gray-900">{record.title}</p>
+                        <p className="text-xs text-gray-500 line-clamp-1">{record.description}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{record.patient.name}</p>
+                        <p className="text-xs text-gray-500">{record.patient.email}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {new Date(record.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <File size={14} />
+                        <span>{record.files.length}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(record.status)}`}>
+                        {record.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <button className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+                        View Details
+                      </button>
+                    </td>
+                  </tr>
+                ))
               )}
-           </div>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* --- MODAL: Upload Document (UPDATED WITH REAL API) --- */}
+      {/* Upload Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
               <div className="p-6 border-b border-gray-100 flex justify-between items-center">
                  <h3 className="text-xl font-bold text-gray-900">Upload Medical Record</h3>
-                 <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-600"><X /></button>
+                 <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-600">
+                   <X />
+                 </button>
               </div>
               
               <div className="p-6">
                  {!uploadSuccess ? (
                     <div className="space-y-5">
-                       {/* Error Message */}
                        {uploadError && (
                           <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
                              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -352,7 +419,6 @@ export const HospitalDashboard: React.FC = () => {
                           </div>
                        )}
 
-                       {/* File Upload Zone */}
                        <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                              Attach Files (Optional)
@@ -369,12 +435,11 @@ export const HospitalDashboard: React.FC = () => {
                              />
                              <label htmlFor="file-upload" className="cursor-pointer">
                                <UploadCloud className="w-10 h-10 mx-auto text-gray-400 mb-2" />
-                               <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
+                               <p className="text-sm text-gray-600">Click to upload files</p>
                                <p className="text-xs text-gray-500 mt-1">PDF, JPG, PNG, DOC (Max 10MB each)</p>
                              </label>
                           </div>
                           
-                          {/* File List */}
                           {files.length > 0 && (
                              <div className="mt-3 space-y-2">
                                 {files.map((file, index) => (
@@ -434,7 +499,7 @@ export const HospitalDashboard: React.FC = () => {
                              onChange={(e) => setRecordDescription(e.target.value)} 
                              rows={3}
                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" 
-                             placeholder="Complete blood count analysis, all parameters within normal range..." 
+                             placeholder="Detailed description..." 
                              disabled={isUploading}
                           />
                        </div>
@@ -459,19 +524,15 @@ export const HospitalDashboard: React.FC = () => {
                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
                           <CheckCircle size={32} />
                        </div>
-                       <h3 className="text-xl font-bold text-gray-900">Record Created Successfully!</h3>
+                       <h3 className="text-xl font-bold text-gray-900">Record Created!</h3>
                        <p className="text-gray-500 mt-2 mb-6 text-sm">
-                          Record sent to <span className="font-semibold text-gray-700">{patientEmail}</span> for approval.
+                          Sent to <span className="font-semibold">{patientEmail}</span>
                        </p>
                        {files.length > 0 && (
                           <p className="text-sm text-gray-600 mb-4">
-                             📎 {files.length} file(s) uploaded successfully
+                             📎 {files.length} file(s) uploaded
                           </p>
                        )}
-                       <div className="flex items-center justify-center p-3 bg-blue-50 rounded-lg border border-blue-100 text-blue-800 mb-6 text-xs">
-                          <Shield size={14} className="mr-2" />
-                          Status: Pending Patient Approval
-                       </div>
                        <Button onClick={resetUpload} variant="outline">Upload Another</Button>
                     </div>
                  )}
@@ -479,34 +540,6 @@ export const HospitalDashboard: React.FC = () => {
            </div>
         </div>
       )}
-
-      {/* --- MODAL: AI Insights --- */}
-      {showAIModal && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up relative">
-               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-tech-400 to-ai-500"></div>
-               <div className="p-8 text-center">
-                  <div className="w-16 h-16 bg-gradient-to-tr from-tech-500 to-ai-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-tech-500/30">
-                     <Brain className="text-white animate-pulse" size={32} />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">AI Patient Analysis</h3>
-                  <p className="text-gray-500 mb-6">Scanning 1,240 records for anomalies and trends...</p>
-                  
-                  <div className="space-y-3">
-                     <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-tech-500 w-2/3 animate-[width_1.5s_ease-in-out_infinite]"></div>
-                     </div>
-                     <p className="text-xs text-tech-600 font-bold">Processing Natural Language Data...</p>
-                  </div>
-
-                  <div className="mt-8">
-                     <Button variant="outline" fullWidth onClick={() => setShowAIModal(false)}>Close Demo</Button>
-                  </div>
-               </div>
-            </div>
-         </div>
-      )}
-
     </div>
   );
 };
