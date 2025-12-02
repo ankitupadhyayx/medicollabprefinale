@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authService, LoginCredentials, RegisterData, AuthResponse } from '../../services/authService';
+import { authService, LoginCredentials, RegisterData, AuthResponse } from '../services/authService';
+import { UserRole } from '../types';
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: 'patient' | 'hospital' | 'admin';
+  role: UserRole;
   isVerified?: boolean;
+  avatar?: string;
 }
 
 interface AuthContextType {
@@ -95,6 +97,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.removeItem('user');
     setUser(null);
     setToken(null);
+    window.location.href = '/login';
   };
 
   return (
